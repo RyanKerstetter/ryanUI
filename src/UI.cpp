@@ -556,6 +556,7 @@ ryanUI::TextField::TextField(std::string text,int char_amount,float font_size, C
  : Component(),max_width(char_amount),text(text),font_size(font_size),font_color(font_color) {
     on_type = onType;
     Font font = GetFontDefault();
+    cursor_location = text.length();
     std::string biggest = "";
     for(int i = 0; i < char_amount;i++){
         biggest += "W"; // Use the widest character in most font sets
@@ -568,32 +569,60 @@ ryanUI::TextField::TextField(std::string text,int char_amount,float font_size, C
 void ryanUI::TextField::render(Vector2 offset){
     Font font = GetFontDefault();
     DrawTextEx(font,text.c_str(),offset,font_size,2,font_color);
-    Vector2 text_size = MeasureTextEx(font,text.c_str(),font_size,2);
+    std::string cursor_text = text.substr(0, cursor_location);
+    Vector2 text_size = MeasureTextEx(font,cursor_text.c_str(),font_size,2);
 
+    int carat_offset = cursor_location == text.size() ? 4 : 2;
     if(carat_timer < carat_reset_time / 2 && text_focus == this)
-        DrawLine(offset.x + text_size.x+4, offset.y + 2,offset.x + text_size.x+4, offset.y + size.y - 4,carat_color);
+        DrawLine(offset.x + text_size.x+carat_offset, offset.y + 2,offset.x + text_size.x+carat_offset, offset.y + size.y - 4,carat_color);
     carat_timer += GetFrameTime();
     while(carat_timer > carat_reset_time)
         carat_timer -= carat_reset_time;
 }
 
-void ryanUI::TextField::onType(Component* self, ryanUI::Event::KeyTypedEvent event){
-    std::cout << "OnType" << (int) event.key << std::endl;
-    TextField* tf = static_cast<TextField*>(self);
+bool ryanUI::TextField::canAdd(char c) {
+    if (fill_width) {
+        std::string new_text = text;
+        new_text.insert(cursor_location, 1, c);
+        Vector2 text_size = MeasureTextEx(GetFontDefault(), new_text.c_str(), font_size, 2);
+        return text_size.x < size.x;
+    }
+    else {
+        return text.size() < max_width;
+    }
+}
 
+void ryanUI::TextField::onType(Component* self, ryanUI::Event::KeyTypedEvent event){
+    TextField* tf = static_cast<TextField*>(self);
+    tf->carat_timer = 0; // Reset carat when typing
     if(event.key < 256){
         char c = (char) event.key;
         int text_size = tf->text.length();
-        if(text_size < tf->max_width){
-            tf->text += c;
+        if (c >= KEY_A && c <= KEY_Z) {
+            // In Upper need to go to lower
+            int letter_offset = c - 'A';
+            c = event.mods.shift ? letter_offset + 'A' : letter_offset + 'a';
+        }
+
+        if(tf->canAdd(c)){
+            tf->text.insert(tf->cursor_location, 1, c);
+            tf->cursor_location += 1;
         }
     }
     if(event.key == KEY_BACKSPACE){
-        if(!tf->text.empty()){
-            tf->text.pop_back();
+        if(!tf->text.empty() && tf->cursor_location > 0){
+            tf->text.erase(tf->cursor_location - 1, 1);
+            tf->cursor_location -= 1;
         }
     }
+    if (event.key == KEY_LEFT) {
+        tf->cursor_location = std::clamp(tf->cursor_location - 1, 0,(int) tf->text.size());
+    }
+    if (event.key == KEY_RIGHT) {
+        tf->cursor_location = std::clamp(tf->cursor_location + 1, 0, (int)tf->text.size());
+    }
 }
+
 
 
 
@@ -631,7 +660,6 @@ void ryanUI::HandleEvents(){
     std::vector<Component*> colliding;
     root->MatchColliding(colliding,mousePos);
     for(Component* c: colliding){
-        std::cout << c << std::endl;
         if(c->on_click)
             SetMouseCursor(MOUSE_CURSOR_POINTING_HAND);
     }

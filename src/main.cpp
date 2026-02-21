@@ -19,6 +19,7 @@ int main(void)
     ryanUI::TextField tf = ryanUI::TextField("a");
     tf.background_color = LIGHTGRAY;
     tf.offset = {200,200};
+    tf.fill_width = true;
 
     ryanUI::CheckBox cb = ryanUI::CheckBox(Vector2{30,30});
     rootBox.AddChild(cb);

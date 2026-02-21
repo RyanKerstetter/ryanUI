@@ -132,6 +132,28 @@ namespace ryanUI{
             KEY_VOLUME_UP,
             KEY_VOLUME_DOWN
         };
+        inline std::unordered_map<char,char> shift_map = { 
+            {'1','!'},
+            {'2','@'},
+            {'3','#'},
+            {'4','$'},
+            {'5','%'},
+            {'6','^'},
+            {'7','&'},
+            {'8','*'},
+            {'9','('},
+            {'0',')'},
+            {'-','_'},
+            {'=','+'},
+            {'[','{'},
+            {']','}'},
+            {'\\','|'},
+            {';',':'},
+            {'\'','"'},
+            {',','<'},
+            {'.','>'},
+            {'/','?'},
+		};
 
         struct KeyState {
             bool pressed = false;      // is key currently down?
@@ -227,6 +249,8 @@ namespace ryanUI{
         std::function<void(Component*,Event::DragEvent)> on_drag = nullptr;
 
         std::function<void(Component*,Event::KeyTypedEvent)> on_type = nullptr;
+
+        std::unordered_map<std::string, std::string> data;
 
         void Draw(Vector2 offset);
         void Update();
@@ -377,6 +401,10 @@ namespace ryanUI{
     class TextField : public Component {
     public:
         int max_width = -1; // -1 means no max width and to grow dynamically
+        bool fill_width = false; // If this is true it will add characters until it would grow past size rather than just to max_width
+                                 // This is different for non monospaced fonts where the size is calculated based on biggest character
+        int cursor_location = 0;
+
         std::string text = "";
         float font_size = 20;
         Color font_color = BLACK;
@@ -389,6 +417,7 @@ namespace ryanUI{
         TextField(std::string start = "", int max_width = 10,float font_size = 20,Color font_color = BLACK);
 
         void render(Vector2 offset);
+        bool canAdd(char c);
 
         static void onType(Component* self, ryanUI::Event::KeyTypedEvent event);
     };
