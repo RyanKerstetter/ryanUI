@@ -1,3 +1,4 @@
+#pragma once
 #include <raylib.h>
 #include <memory>
 #include <vector>
@@ -6,14 +7,6 @@
 #include <unordered_map>
 
 namespace ryanUI{
-
-   
-    
-    enum class Location {
-        TOP_LEFT   ,TOP_MIDDLE   ,TOP_RIGHT,
-        LEFT       ,MIDDLE       ,RIGHT,
-        BOTTOM_LEFT,BOTTOM_MIDDLE,BOTTOM_RIGHT,
-    };
 
     namespace Keyboard {
         constexpr KeyboardKey allKeys[] = {
@@ -180,8 +173,6 @@ namespace ryanUI{
         void Initialize();
     }
 
-
-
     namespace Event {
         enum class MouseButton{
             NONE,
@@ -214,8 +205,55 @@ namespace ryanUI{
         };
     }
 
+    class Component;
+
+    namespace Animation {
+        class Animation {
+        public:
+            float duration = 0.0f;
+            float timer = 0.0f;
+            bool finished = false;
+
+            Animation(float duration);
+            void Update(float delta_time);
+            virtual void update(float t) = 0;
+            virtual ~Animation() = default;
+        };
+
+        class ComponentAnimation : public Animation {
+        public:
+            std::function<void(Component*, float)> func;
+            Component* self;
+
+            ComponentAnimation(float duration, Component* self, std::function<void(Component*, float)> func);
+            void update(float t) override;
+        };
+
+        template<typename T>
+        class PropertyAnimation : public Animation {
+        public:
+            T* target;
+            T start_value;
+            T end_value;
+            std::function<float(float)> easing;
+
+            PropertyAnimation(T* target, T start, T end, float duration, std::function<float(float)> easing)
+                : Animation(duration), target(target), start_value(start), end_value(end), easing(easing) {
+            };
+
+            void update(float t) override {
+                if (t < 0.0f) return;
+                float e = easing(t);
+                T diff = end_value - start_value;
+                *target = (e * diff) + start_value;
+            }
+        };
+    }
+
     class Component {
     public:
+        std::shared_ptr<Component> parent;
+
         Vector2 offset = {0,0};
         Vector2 size = {0,0};
 
@@ -230,7 +268,8 @@ namespace ryanUI{
         int padding_right = 0; 
 
         bool visible = true;
-        Color background_color = WHITE;
+        float opacity = 1.0f;
+        Color background_color = BLANK;
         Color border_color = BLACK;
         int border_size = 0;
 
@@ -250,24 +289,35 @@ namespace ryanUI{
 
         std::function<void(Component*,Event::KeyTypedEvent)> on_type = nullptr;
 
+        std::vector<std::shared_ptr<Animation::Animation>> animations;
+
         std::unordered_map<std::string, std::string> data;
 
-        void Draw(Vector2 offset);
+        void Draw(Vector2 offset, float opacity);
         void Update();
 
         void SetContentSize(Vector2 size);
         void SetInnerSize(Vector2 innerSize);
         void SetTotalSize(Vector2 totalSize);
+        virtual void HandleChildSizeChange();
 
-        virtual void OnClick(Event::MouseEvent event);
-        virtual void OnHold(Event::MouseEvent event);
-        virtual void OnRelease(Event::MouseEvent event);
-        virtual void OnHover(Event::MouseEvent event);
+        void AddAnimation(std::shared_ptr<Animation::Animation> animation);
+
+        virtual bool OnClick(Event::MouseEvent event);
+        virtual bool OnHold(Event::MouseEvent event);
+        virtual bool OnRelease(Event::MouseEvent event);
+        virtual bool OnHover(Event::MouseEvent event);
         virtual void OnHoverExit();
-        virtual void OnScroll(Event::ScrollEvent event);
+        virtual bool OnScroll(Event::ScrollEvent event);
         virtual void OnDrag(Event::DragEvent event);
         virtual void OnType(Event::KeyTypedEvent event);
-        virtual void MatchColliding(std::vector<Component*>& colliding,Vector2 point);
+        virtual bool IsInteractable(Vector2 offset);
+
+        struct CollidingEntry {
+            Component* comp = nullptr;
+            Vector2 offset = { 0,0 };
+        };
+        virtual void MatchColliding(std::vector<CollidingEntry>& colliding,Vector2 point);
 
         virtual void Print();
         
@@ -276,17 +326,23 @@ namespace ryanUI{
         void SetMargin(int margin);
         void SetPadding(int padding);
 
+        Vector2 GetGlobalOffset();
+
+        virtual void Init() {};
+
+        
+
         Component();
         Component(Vector2 size);
         Component(Vector2 offset, Vector2 size);
         virtual ~Component() = default;
     protected:
-        virtual void render(Vector2 offset);
+        virtual void render(Vector2 offset, float opacity = 1.0f);
         virtual void resize(Vector2 new_size);
         virtual void update();
     };
 
-    class Box : public Component{
+    class Box : public Component, public std::enable_shared_from_this<Box>{
     public:
         enum class GrowMode{ // THis is which direction it grows when adding
             FREE,
@@ -295,35 +351,30 @@ namespace ryanUI{
             UP,
             DOWN,
         };
-        enum class FillMode { // This is how the size is set when adding elements
-            FREE, // No change
-            EVEN, // Makes each take up 1/n of the open area so 3 elements each take up 33%
-            LAST_FILL, // Makes the last area stretch to the end
-        };
+       
+
+        // This determines of the Component gets shrunk to fit the box if it is too big along the non growth axis
+        // So if it grows right and is too big vertically it would be shrunk to the vertical size of the box if true
+        // If false the box would change its y to accomodate the biggest Component
+        bool fit_non_axis = true;
+
         GrowMode grow_mode = GrowMode::FREE;
-        FillMode fill_mode = FillMode::FREE;
-        std::vector<std::shared_ptr<Component>> children;
 
-        std::vector<std::shared_ptr<Component>> add_pending;
-        std::vector<std::shared_ptr<Component>> remove_pending;
-
+        
         virtual void AddChild(std::shared_ptr<Component> child);
-        void AddChild(Component& child);
-        void AddChild(Component* child);
         virtual void RemoveChild(std::shared_ptr<Component> child);
+        virtual void SetGrowMode(GrowMode mode);
+        void HandleChildSizeChange() override;
+
         void Recompute();
         void FlushPending();
 
-        void OnClick(Event::MouseEvent event) override;
-        void OnHold(Event::MouseEvent event) override;
-        void OnRelease(Event::MouseEvent event) override;
-        void OnHover(Event::MouseEvent event) override;
-        void OnScroll(Event::ScrollEvent event) override;
-        void MatchColliding(std::vector<Component*>& colliding,Vector2 point);
+        
+        void MatchColliding(std::vector<CollidingEntry>& colliding,Vector2 point) override;
 
         void Print() override;
 
-        void render(Vector2 offset) override;
+        void render(Vector2 offset, float opacity) override;
         void resize(Vector2 size) override;
         void update() override;
         
@@ -331,6 +382,17 @@ namespace ryanUI{
         Box();
         Box(Vector2 offset, Vector2 size);
         Box(Vector2 size);
+
+        std::vector<std::shared_ptr<Component>> children;
+    protected:
+        
+        
+        std::vector<std::shared_ptr<Component>> add_pending;
+        std::vector<std::shared_ptr<Component>> remove_pending;
+
+        // This is turned on whenever computing the bounds for the children
+        // Recompute calls child->SetTotalSize() which calls parent->HandleChildSizeChange() which would result in infinite recursion
+        bool computing = false;
 
     };
 
@@ -342,9 +404,33 @@ namespace ryanUI{
 
         Vector2 GetTextSize();
         
-        void render(Vector2 offset) override;
+        void render(Vector2 offset, float opacity) override;
 
         Text(std::string text = "",float font_size = 20,Color font_color = BLACK);
+    };
+
+    class Slider : public Component {
+    public:
+        float current_progress = 0;
+        Color track_left_color = BLUE;
+        Color track_right_color = LIGHTGRAY;
+        Color dot_color = BLUE;
+        Color tick_color = LIGHTGRAY;; // Tickmarks for the discrete slider options
+        int tick_width = 4;
+        int tick_height = 12;
+        int track_height = 6;
+        int dot_radius = 10;
+        std::vector<float> values;
+
+        Slider(float width, std::vector<float> discrete_values = {});
+        Slider(Vector2 size, std::vector<float> discrete_values = {});
+
+        bool IsInteractable(Vector2 offset) override;
+
+        void render(Vector2 offset, float opacity);
+
+        static void onClick(Component* self, ryanUI::Event::MouseEvent click);
+        static void onDrag(Component* self, ryanUI::Event::DragEvent drag);
     };
 
     class ScrollBar : public Component{
@@ -355,26 +441,32 @@ namespace ryanUI{
 
         Color bar_color = BLACK;
 
-        void render(Vector2 offset) override;
-
-        ScrollBar();
-        ScrollBar(float height, bool horizontal = false);
-        ScrollBar(Vector2 size, bool horizontal = false);
+        void render(Vector2 offset, float opacity) override;
 
         static void onClick(Component* self,ryanUI::Event::MouseEvent click);
         static void onDrag(Component* self,ryanUI::Event::DragEvent drag);
+    
+        ScrollBar();
+        ScrollBar(float height, bool horizontal = false);
+        ScrollBar(Vector2 size, bool horizontal = false);
     };
 
     class ScrollPane : public Box {
     public:
-        Box content = Box();
-        ScrollBar scroll_bar = ScrollBar();
+        std::shared_ptr<Box> content = nullptr;
+        std::shared_ptr<ScrollBar> scroll_bar = nullptr;
 
-        ScrollPane(Vector2 size);
-
-        void AddChild(std::shared_ptr<Component> child);
-        void render(Vector2 offset) override;
+        void SetGrowMode(GrowMode mode) override;
+        void AddChild(std::shared_ptr<Component> child) override;
+        void RemoveChild(std::shared_ptr<Component> child) override;
+        void render(Vector2 offset, float opacity) override;
         void update() override;
+        void Init() override;
+
+        static void onScroll(Component* self, Event::ScrollEvent event);
+
+    public: // Do not use these use ryanUI::Create instead 
+        ScrollPane(Vector2 size);
     };
 
     class CheckBox : public Component {
@@ -398,6 +490,11 @@ namespace ryanUI{
         static void onClick(Component* self, Event::MouseEvent event);
     };
 
+    namespace Verifier {
+        bool integer_verifier(const std::string& text);
+        bool float_verifier(const std::string& text);
+    }
+
     class TextField : public Component {
     public:
         int max_width = -1; // -1 means no max width and to grow dynamically
@@ -410,21 +507,133 @@ namespace ryanUI{
         Color font_color = BLACK;
         Color carat_color = WHITE;
         float carat_timer = 0;
-        float carat_reset_time = 1; // Will spend 1/2 the time on 1/2 off Lower half is spend on
+        float carat_reset_time = 1; // Will spend 1/2 the time on 1/2 off. Lower half is spent on
         
-        std::function<void(Component*)> on_submit;
+        std::function<void(TextField*)> on_submit = nullptr;
+        std::function<bool(std::string&)> verifier = nullptr;
 
         TextField(std::string start = "", int max_width = 10,float font_size = 20,Color font_color = BLACK);
 
-        void render(Vector2 offset);
+        void render(Vector2 offset, float opacity);
         bool canAdd(char c);
+        void Clear();
 
         static void onType(Component* self, ryanUI::Event::KeyTypedEvent event);
     };
 
-    void SetRoot(std::shared_ptr<Box> box);
-    void SetRoot(Box& box);
+    class UIImage : public Component {
+    public:
+        Texture2D texture;
+
+        UIImage(Texture2D texture,Vector2 size);
+
+        void render(Vector2 offset, float opacity) override;
+    };
+
+    class Switch : public Component {
+    public:
+        bool on = false;
+        Color selected_color = BLUE;
+        Color deselected_color = DARKGRAY;
+        Color dot_color = LIGHTGRAY;
+        int dot_radius;
+        Switch(Vector2 size = { 40,25 }, float roundness = 1.0f);
+
+        void render(Vector2 offset, float opacity);
+
+
+        static void onHover(Component* self, Event::MouseEvent event);
+        static void onHoverExit(Component* self);
+        static void onClick(Component* self, Event::MouseEvent event);
+    };
+
+    class Expander : public Box {
+    public:
+        bool is_expanded = false;
+
+        std::shared_ptr<UIImage> down_arrow = nullptr;
+        std::shared_ptr<UIImage> up_arrow = nullptr;
+       
+
+        void SetDefaultComponent(std::shared_ptr<Component> default);
+        void SetExpandedComponent(std::shared_ptr<Component> default);
+
+        void Expand();
+        void Contract();
+
+        void Init() override;
+    public: // Do not use this instead use ryanUI::Create
+        Expander(Vector2 component_size);
+    private:
+        std::shared_ptr<Component> default_component = nullptr;
+        std::shared_ptr<Component> expanded_component = nullptr;
+    };
+
+    class DropdownMenu : public Box {
+    public:
+        std::shared_ptr<Text> text = nullptr;
+        std::shared_ptr<UIImage> down_arrow = nullptr;
+        std::vector<std::string> options;
+
+        std::function<void(DropdownMenu*)> on_select = nullptr;
+
+        int selected = 0;
+        DropdownMenu(std::vector<std::string> options, float font_size = 20, Color font_color = BLACK);
+        
+        void SetSelection(int sel);
+
+        void Init() override;
+
+        static void onClick(Component* self, Event::MouseEvent event);
+    };
+
+    class TreeSource : public Text {
+    public:
+        std::shared_ptr<Box> node_list = nullptr;
+        TreeSource(std::string);
+
+        static void onClick(Component* self, Event::MouseEvent event);
+    };
+
+    class TreeNode : public Text {
+    public:
+        inline static std::shared_ptr<Box> root = nullptr;
+        std::shared_ptr<Box> node_list = nullptr;
+        int depth = 0;
+        TreeNode(std::string str,int depth);
+
+        static void onClick(Component* self, Event::MouseEvent event);
+        static void rootOnClick(Component* self, Event::MouseEvent event);
+    };
+
+    struct PopupEntry {
+        bool block_inputs = true;
+        bool close_on_outside_click = true;
+        std::shared_ptr<Component> component = nullptr;
+    };
+
+
+    template <typename T, typename... Args>
+    static std::shared_ptr<T> Create(Args&&... args) {
+
+        auto ptr = std::make_shared<T>(std::forward<Args>(args)...);
+        ptr->Init();  // Safe: ptr is now managed by shared_ptr
+        return ptr;
+    }
+
+    
+    void Init(int window_width, int window_height);
+    std::shared_ptr<Box> GetRoot();
     void HandleEvents();
+    void Draw();
+    
+    void SetPopup(PopupEntry entry);
+    void ClearPopup();
+
+    inline static Font default_font = GetFontDefault();
+    
+
+    // DO NOT MODIFY ANYTHING BELOW HERE
 
     inline static std::shared_ptr<Box> root = nullptr;
     inline static Component* dragged_component = nullptr; // Cant use shared ptr because no access to its own shared ptr
@@ -432,4 +641,12 @@ namespace ryanUI{
     inline static Event::MouseButton drag_btn = Event::MouseButton::NONE;
 
     inline static Component* text_focus = nullptr;
+
+    inline static std::unordered_map<std::string, Texture2D> loaded_textures;
+
+    
+    inline static PopupEntry temp_popup; // We need a temp because adding a popup while handling events results in errors
+    inline static PopupEntry popup;
+
+    
 };
