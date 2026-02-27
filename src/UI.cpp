@@ -192,6 +192,12 @@ bool ryanUI::Component::IsInteractable(Vector2 offset) {
     return CheckCollisionPointRec(offset, { 0,0,size.x,size.y });
 }
 
+void ryanUI::Component::OnClose() {
+    if (on_close) {
+        on_close(this);
+    }
+}
+
 void ryanUI::Component::MatchColliding(std::vector<CollidingEntry>& colliding,Vector2 point){
     //std::cout << "MatchColliding:" << point.x << "," << point.y << std::endl;
     if (!visible)
@@ -222,7 +228,8 @@ void ryanUI::Component::Update(){
         animations.end()
     );
 
-    update();
+    if(on_update)
+        on_update(this);
 }
 
 void ryanUI::Component::Print(){
@@ -272,8 +279,6 @@ Vector2 ryanUI::Component::GetGlobalOffset() {
 void ryanUI::Component::render(Vector2 offset, float opacity) {}
 
 void ryanUI::Component::resize(Vector2 size){}
-
-void ryanUI::Component::update() {};
 
 ryanUI::Component::Component(){}
 
@@ -348,11 +353,15 @@ void ryanUI::Box::Recompute(){
         Vector2 offset = Vector2{ static_cast<float>(pos_x),static_cast<float>(pos_y)};
         child->offset = offset;
 
-        if (grow_x != 0 && fit_non_axis) // This means it grows to the left or right
+        if (grow_x != 0 && fit_non_axis) { // This means it grows to the left or right
+            std::cout << "Fitting non axis X" << std::endl;
             child->SetInnerSize({ child_size.x,size.y });
+        }
 
-        if(grow_y != 0 && fit_non_axis) // This means it grows up or down
-            child->SetInnerSize({size.x,child_size.y}); // So we set the width to inherit from the box
+        if (grow_y != 0 && fit_non_axis) {// This means it grows up or down
+            std::cout << "Fitting non axis Y" << std::endl;
+            child->SetInnerSize({ size.x,child_size.y }); // So we set the width to inherit from the box
+        }
 
         if (!fit_non_axis && child_size.x > size.x) {
             SetContentSize(Vector2{ child_size.x,size.y });
@@ -401,8 +410,10 @@ void ryanUI::Box::FlushPending(){
         children.push_back(pending);
     add_pending.clear();
 
-    for(std::shared_ptr<Component> pending: remove_pending)
-        children.erase(std::remove(children.begin(),children.end(),pending),children.end());
+    for (std::shared_ptr<Component> pending : remove_pending) {
+        std::cout << "Removing" << pending.get() << std::endl;
+        children.erase(std::remove(children.begin(), children.end(), pending), children.end());
+    }
     remove_pending.clear();
 
     Recompute();
@@ -421,12 +432,14 @@ void ryanUI::Box::resize(Vector2 size){
     Recompute();
 }
 
-void ryanUI::Box::update(){
+void ryanUI::Box::Update(){
+    
     for(std::shared_ptr<Component> child:children){
         child->Update();
     }
 
     FlushPending();
+    Component::Update();
 }
 
 void ryanUI::Box::Print(){
@@ -449,6 +462,38 @@ void ryanUI::Box::MatchColliding(std::vector<CollidingEntry>& colliding,Vector2 
     }
 }
 
+void ryanUI::Box::Fit() {
+    if ((true || grow_mode == GrowMode::FREE) && children.size() != 0) {
+        float min_x = INT_MAX;
+        float min_y = INT_MAX;
+        float max_x = INT_MIN;
+        float max_y = INT_MIN;
+        for (int i = 0; i < children.size(); i++) {
+            std::shared_ptr<Component> child = children[i];
+            Vector2 child_size = child->GetTotalSize();
+            min_x = std::min(child->offset.x,min_x);
+            max_x = std::max(child->offset.x + child_size.x,max_x);
+            min_y = std::min(child->offset.y,min_y);
+            max_y = std::max(child->offset.y + child_size.y,max_y);
+        }
+
+
+        offset.x += min_x;
+        offset.y += min_y;
+        std::cout << "Min_x" << min_x << " Min_y" << min_y << std::endl;
+        for (int i = 0; i < children.size(); i++) {
+            std::shared_ptr<Component> child = children[i];
+            child->offset.x -= min_x;
+            child->offset.y -= min_y;
+        }
+        Vector2 new_size = { max_x - min_x,max_y - min_y };
+
+        if (new_size.x != size.x || new_size.y != size.y) {
+            std::cout << "NewSize:" << new_size.x << "," << new_size.y << std::endl;
+            SetContentSize({ max_x - min_x,max_y - min_y });
+        }
+    }
+}
 
 ryanUI::Box::Box() : Component() {}
 
@@ -616,7 +661,7 @@ ryanUI::ScrollBar::ScrollBar(Vector2 size, bool horizontal) : Component({0,0},si
 ryanUI::ScrollBar::ScrollBar(float size,bool h) : ScrollBar(Vector2{h ? size : 20,h ? 20 : size},h) {}
 
 
-ryanUI::ScrollPane::ScrollPane(Vector2 size) : Box(Vector2{size.x + 22,size.y}){
+ryanUI::ScrollPane::ScrollPane(Vector2 size) : Box(Vector2{size.x + 22,size.y}), min_content_size(size){
     scroll_bar = Create<ScrollBar>(size.y-2);
     scroll_bar->border_size = 1;
     content = Create<Box>(size);
@@ -630,7 +675,6 @@ void ryanUI::ScrollPane::SetGrowMode(GrowMode mode) {
 }
 
 void ryanUI::ScrollPane::Init() {
-    std::cout << "ScrollPane Init" << std::endl;
     Box::AddChild(scroll_bar);
     Box::AddChild(content);
     FlushPending();
@@ -644,7 +688,8 @@ void ryanUI::ScrollPane::RemoveChild(std::shared_ptr<Component> child) {
     content->RemoveChild(child);
 }
 
-void ryanUI::ScrollPane::update(){
+void ryanUI::ScrollPane::Update(){
+    Box::Update();
     float bar_progress = scroll_bar->current_progress;
     float content_y_size = content->size.y;
     float ratio = size.y / content_y_size;
@@ -661,7 +706,10 @@ void ryanUI::ScrollPane::render(Vector2 offset, float opacity){
 
 void ryanUI::ScrollPane::onScroll(Component* self, Event::ScrollEvent event) {
     std::cout << "onScroll" << event.scroll_dir.y << std::endl;
+    std::cout << "Size:" << self->size.x << "," << self->size.y << std::endl;
     ScrollPane* sp = static_cast<ScrollPane*>(self);
+    std::cout << "ContentSize:" << sp->content->size.x << "," << sp->content->size.y << std::endl;
+    
     sp->scroll_bar->current_progress += event.scroll_dir.y / sp->content->size.y * -1 * 15;
     sp->scroll_bar->current_progress = std::clamp(sp->scroll_bar->current_progress, 0.0f, 1.0f);
 }
@@ -998,6 +1046,14 @@ void ryanUI::DropdownMenu::onClick(ryanUI::Component* self, ryanUI::Event::Mouse
 
 ryanUI::TreeSource::TreeSource(std::string str) : Text(str) {
     on_click = onClick;
+    node_list = Create<Box>();
+    node_list->background_color = LIGHTGRAY;
+    node_list->fit_non_axis = false;
+    node_list->SetGrowMode(Box::GrowMode::DOWN);
+}
+
+void ryanUI::TreeSource::AddNode(std::shared_ptr<TreeNode> child) {
+    node_list->AddChild(child);
 }
 
 void ryanUI::TreeSource::onClick(Component* self, Event::MouseEvent event) {
@@ -1011,20 +1067,56 @@ void ryanUI::TreeSource::onClick(Component* self, Event::MouseEvent event) {
     SetPopup(entry);
 }
 
-ryanUI::TreeNode::TreeNode(std::string str, int depth) : Text(str),depth(depth) {}
+ryanUI::TreeNode::TreeNode(std::string str, int depth,Vector2 size) : Box(size),depth(depth) {
+    on_click = onClick;
+    label = Create<Text>(str);
+    image = Create<UIImage>(loaded_textures["blank"], Vector2{ 16,16 });
+    image->offset = Vector2{ size.x - 16 - (label->size.y - 16) / 2, (label->size.y - 16) / 2 };
+}
+
+void ryanUI::TreeNode::Init() {
+    Box::AddChild(label);
+    Box::AddChild(image);
+}
+
+void ryanUI::TreeNode::MakeTree() {
+    sub_box = Create<Box>();
+    sub_box->background_color = LIGHTGRAY;
+    sub_box->fit_non_axis = false;
+    sub_box->SetGrowMode(Box::GrowMode::DOWN);
+
+    image->texture = loaded_textures["right_arrow"];
+}
+
+void ryanUI::TreeNode::AddNode(std::shared_ptr<TreeNode> child){
+    if (!sub_box) {
+        std::cout << "Attempting to AddNode to a TreeNode that you havn't called MakeTree on" << std::endl;
+        return;
+    } 
+    sub_box->AddChild(child);
+}
+
 
 void ryanUI::TreeNode::onClick(Component* self, Event::MouseEvent event) {
     TreeNode* tn = static_cast<TreeNode*>(self);
     
+    if (!tn->sub_box) { // If it is a leaf node
+        if (tn->leaf_click) {
+            tn->leaf_click(self, event);
+        }
+        return;
+    }
+
     if (root->children.size() > tn->depth) { // Clicked back in the tree
-        for (int i = root->children.size() - 1; i > tn->depth; i--) {
+        for (int i = root->children.size() - 1; i >= tn->depth; i--) {
             root->children.pop_back();
         }
     }
     if (root->children.size() == tn->depth) { // This means it is the next one to be added
         Vector2 global_offset = tn->GetGlobalOffset();
-        tn->node_list->offset = { global_offset.x + tn->size.x,global_offset.y };
-        root->AddChild(tn->node_list);
+        Vector2 parent_size = tn->parent->size;
+        tn->sub_box->offset = { global_offset.x + parent_size.x,global_offset.y };
+        root->AddChild(tn->sub_box);
     }
     else {}  // Clicked an option that shouldn't exist. This means there is an error somehwere. Probably set the depth values wrong
 
@@ -1037,12 +1129,21 @@ void ryanUI::TreeNode::rootOnClick(Component* self, Event::MouseEvent event) {
 void ryanUI::Init(int window_height, int window_width) {
     loaded_textures["down_arrow"] = LoadTexture("ryanUI/down-arrow.png");
     loaded_textures["up_arrow"] = LoadTexture("ryanUI/up-arrow.png");
+    loaded_textures["right_arrow"] = LoadTexture("ryanUI/right-arrow.png");
+
+    Image img = GenImageColor(1, 1, BLANK);
+    loaded_textures["blank"] = LoadTextureFromImage(img);
 
     default_font = LoadFontEx("ryanUI/IBMPlexMono-Regular.ttf",20,0,0);
 
     root = Create<ryanUI::Box>(Vector2{ (float)window_height,(float)window_width });
 
     TreeNode::root = Create<Box>();
+    TreeNode::root->on_close = [](Component* self) {
+        std::cout << "OnClose" << std::endl;
+        Box* b = static_cast<Box*>(self);
+        b->children.clear();
+        };
 }
 
 std::shared_ptr<ryanUI::Box> ryanUI::GetRoot(){
@@ -1081,7 +1182,6 @@ void ryanUI::HandleEvents(){
         popup.component->MatchColliding(popup_colliding, Vector2{ mousePos.x - popup.component->GetGlobalOffset().x,mousePos.y - popup.component->GetGlobalOffset().y });
 
     for(Component::CollidingEntry c: popup_colliding){
-        std::cout << c.comp << std::endl;
         if ((c.comp->on_click || c.comp->on_type || c.comp->on_drag) && c.comp->IsInteractable(c.offset))
             cursor = MOUSE_CURSOR_POINTING_HAND;
     }
@@ -1089,6 +1189,10 @@ void ryanUI::HandleEvents(){
         if ((c.comp->on_click || c.comp->on_type || c.comp->on_drag) && c.comp->IsInteractable(c.offset))
             cursor = MOUSE_CURSOR_POINTING_HAND;
     }
+
+    // This tracks if we need to clear the popup at the end. 
+    // We can't do this in the middle since we already have pointers to the popup in the colliding vector
+    bool clear_popup = false; 
 
     SetMouseCursor(cursor);
 
@@ -1099,7 +1203,7 @@ void ryanUI::HandleEvents(){
         Component::CollidingEntry& c = popup_colliding[i];
         hover_event.relative_pos = c.offset;
         if (c.comp->OnHover(hover_event)) {
-            popup_captured;
+            popup_captured = true;
             break;
         }
     }
@@ -1135,8 +1239,9 @@ void ryanUI::HandleEvents(){
                 break;
         }
 
-        if (!popup_captured && popup.component && popup.close_on_outside_click)
-            popup.component = nullptr;
+        if (!popup_captured && popup.component && popup.close_on_outside_click) {
+            clear_popup = true;
+        }
     }
 
     Event::MouseEvent release_event;
@@ -1251,9 +1356,12 @@ void ryanUI::HandleEvents(){
     
     popup_colliding.clear();
     colliding.clear();
-
-    if(temp_popup.component)
+    if (clear_popup)
+        ClearPopup();
+    if (temp_popup.component) {
+        ClearPopup();
         popup = temp_popup;
+    }
     temp_popup.component = nullptr;
     root->Update();
     if (popup.component)
@@ -1274,5 +1382,7 @@ void ryanUI::SetPopup(PopupEntry entry) {
 }
 
 void ryanUI::ClearPopup() {
+    if(popup.component)
+        popup.component->OnClose();
     popup = PopupEntry();
 }

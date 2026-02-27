@@ -289,12 +289,17 @@ namespace ryanUI{
 
         std::function<void(Component*,Event::KeyTypedEvent)> on_type = nullptr;
 
+        std::function<void(Component*)> on_update = nullptr;
+
+        std::function<void(Component*)> on_close = nullptr; // This is called when a popup is closed instead of exited
+
+
         std::vector<std::shared_ptr<Animation::Animation>> animations;
 
         std::unordered_map<std::string, std::string> data;
 
         void Draw(Vector2 offset, float opacity);
-        void Update();
+        virtual void Update();
 
         void SetContentSize(Vector2 size);
         void SetInnerSize(Vector2 innerSize);
@@ -312,6 +317,8 @@ namespace ryanUI{
         virtual void OnDrag(Event::DragEvent event);
         virtual void OnType(Event::KeyTypedEvent event);
         virtual bool IsInteractable(Vector2 offset);
+
+        void OnClose();
 
         struct CollidingEntry {
             Component* comp = nullptr;
@@ -339,7 +346,6 @@ namespace ryanUI{
     protected:
         virtual void render(Vector2 offset, float opacity = 1.0f);
         virtual void resize(Vector2 new_size);
-        virtual void update();
     };
 
     class Box : public Component, public std::enable_shared_from_this<Box>{
@@ -376,7 +382,8 @@ namespace ryanUI{
 
         void render(Vector2 offset, float opacity) override;
         void resize(Vector2 size) override;
-        void update() override;
+        void Update() override;
+        void Fit();
         
 
         Box();
@@ -453,6 +460,7 @@ namespace ryanUI{
 
     class ScrollPane : public Box {
     public:
+        Vector2 min_content_size = { 0,0 };
         std::shared_ptr<Box> content = nullptr;
         std::shared_ptr<ScrollBar> scroll_bar = nullptr;
 
@@ -460,8 +468,10 @@ namespace ryanUI{
         void AddChild(std::shared_ptr<Component> child) override;
         void RemoveChild(std::shared_ptr<Component> child) override;
         void render(Vector2 offset, float opacity) override;
-        void update() override;
+        void Update() override;
         void Init() override;
+
+        void HandleChildSizeChange() override {};
 
         static void onScroll(Component* self, Event::ScrollEvent event);
 
@@ -587,25 +597,42 @@ namespace ryanUI{
         static void onClick(Component* self, Event::MouseEvent event);
     };
 
-    class TreeSource : public Text {
-    public:
-        std::shared_ptr<Box> node_list = nullptr;
-        TreeSource(std::string);
-
-        static void onClick(Component* self, Event::MouseEvent event);
-    };
-
-    class TreeNode : public Text {
+    class TreeNode : public Box {
     public:
         inline static std::shared_ptr<Box> root = nullptr;
-        std::shared_ptr<Box> node_list = nullptr;
+        std::shared_ptr<Box> sub_box = nullptr;
+        std::shared_ptr<Text> label = nullptr;
+        std::shared_ptr<UIImage> image = nullptr;
+
+
+        std::function<void(Component*, Event::MouseEvent)> leaf_click = nullptr;
+
         int depth = 0;
-        TreeNode(std::string str,int depth);
+        TreeNode(std::string str, int depth,Vector2 size);
+
+        void Init();
+
+        void MakeTree();
+        void AddNode(std::shared_ptr<TreeNode> child);
 
         static void onClick(Component* self, Event::MouseEvent event);
         static void rootOnClick(Component* self, Event::MouseEvent event);
     };
 
+    class TreeSource : public Text {
+    public:
+        std::shared_ptr<Box> node_list = nullptr;
+
+        TreeSource(std::string);
+
+        void AddNode(std::shared_ptr<TreeNode> child);
+
+        static void onClick(Component* self, Event::MouseEvent event);
+    private:
+        
+    };
+
+    
     struct PopupEntry {
         bool block_inputs = true;
         bool close_on_outside_click = true;

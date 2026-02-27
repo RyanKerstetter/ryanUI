@@ -2,8 +2,44 @@
 #include "UI.h"
 #include <iostream>
 #include "Easing.h"
+#include <filesystem>
+#include "Components.h"
+
+namespace fs = std::filesystem;
 
 using namespace ryanUI;
+using namespace ryanUI::Components;
+
+void set_sp(std::shared_ptr<ScrollPane> sp, fs::path p) {
+    std::cout << "set_sp" << std::endl;
+    for (std::shared_ptr<Component> c : sp->content->children) {
+        sp->RemoveChild(c);
+    }
+
+    if (!p.parent_path().empty()) {
+        std::shared_ptr<Text> up = Create<Text>("..");
+        up->border_size = 1;
+        up->on_click = [sp,p](Component* self, Event::MouseEvent event) {
+            set_sp(sp, p.parent_path());
+            };
+        sp->AddChild(up);
+    }
+    float y_accum = 0;
+    for (const auto entry : fs::directory_iterator(p)) {
+        std::string file_name = entry.path().filename().string();
+        std::shared_ptr<Text> text = Create<Text>(file_name);
+        if (entry.is_directory()) {
+            text->on_click = [p, sp, file_name](Component* self, Event::MouseEvent event) {
+                fs::path new_path = p / file_name;
+                set_sp(sp, new_path);
+                };
+        }
+        sp->AddChild(text);
+        y_accum += text->size.y;
+    }
+
+    sp->content->size.y = std::max(y_accum, sp->min_content_size.y);
+};
 
 int main(void)
 {
@@ -16,64 +52,33 @@ int main(void)
     SetTargetFPS(60);
 
     
-    
+    fs::path path = fs::current_path();
+
     std::shared_ptr<Box> root_box = GetRoot();
 
-    std::shared_ptr<Box> top_bar = Create<Box>(Vector2{ 800,35 });
-    top_bar->SetGrowMode(Box::GrowMode::RIGHT);
-    top_bar->background_color = LIGHTGRAY;
-    root_box->AddChild(top_bar);
 
-    std::shared_ptr<Box> file_box = Create<Box>();
-    file_box->background_color = LIGHTGRAY;
-    file_box->SetGrowMode(Box::GrowMode::DOWN);
     std::vector<std::string> options = { "new","open","clone repository","start window","add","close","close folder","print" };
-    file_box->fit_non_axis = false;
-    for (std::string& str : options) {
-        std::shared_ptr<TreeNode> text = Create<TreeNode>(str,1);
-        text->background_color = LIGHTGRAY;
-        text->border_color = BLACK;
-
-        std::shared_ptr<Box> next_box = Create<Box>();
-        file_box->background_color = LIGHTGRAY;
-        file_box->SetGrowMode(Box::GrowMode::DOWN);
-        for (std::string& str2 : options) {
-            std::string new_str = str + "-" + str2;
-            std::shared_ptr<Text> next = Create<Text>(str);
-            next->background_color = LIGHTGRAY;
-            next->border_color = BLACK;
-            next_box->AddChild(next);
-        }
-        
-        file_box->AddChild(text);
-    }
-    
-    std::shared_ptr<TreeSource> file = Create<TreeSource>("file");
-    file->background_color = LIGHTGRAY;
-    file->border_size = 1;
-    file->node_list = file_box;
-    top_bar->AddChild(file);
-
-    std::shared_ptr<Text> edit = Create<Text>("edit");
-    edit->background_color = LIGHTGRAY;
-    edit->border_size = 1;
-    top_bar->AddChild(edit);
-    
     
     /*
-    std::shared_ptr<DropdownMenu> menu = Create<DropdownMenu>(std::vector<std::string>{ "Ryan","Sebastian","Jackson","Braxton","Will","Darius" });
-    menu->background_color = LIGHTGRAY;
-    menu->offset = { 100,100 };
-    menu->on_select = [](DropdownMenu* menu) {
-        std::cout << "Menu: " << menu->text->text << std::endl;
-        };
-    root_box->AddChild(menu);
+    std::shared_ptr<ScrollPane> sp = Create<ScrollPane>(Vector2{ 700,200 });
+    sp->offset = { 50,150 };
+    sp->content->fit_non_axis = false;
+
+    sp->SetGrowMode(Box::GrowMode::DOWN);
+    sp->background_color = LIGHTGRAY;
+    
+    set_sp(sp, path);
     */
+
+    std::shared_ptr<FileSelectDialog> fsd = Create<FileSelectDialog>(Vector2{ 600,400 }, path,nullptr);
+
+    root_box->AddChild(fsd);
+    
     
     while (!WindowShouldClose())
     {
         BeginDrawing();
-        ClearBackground(RAYWHITE);
+        ClearBackground(BLUE);
         ryanUI::HandleEvents();
         ryanUI::Draw();
 

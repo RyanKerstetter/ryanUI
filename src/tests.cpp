@@ -82,4 +82,44 @@
     //box->AddChild(image);
 
     rootBox->FlushPending();
+
+    //
+    // Dropdown Example
+    //
+    //
+
+    std::shared_ptr<Box> root_box = GetRoot();
+
+    std::shared_ptr<Box> top_bar = Create<Box>(Vector2{ 800,35 });
+    top_bar->SetGrowMode(Box::GrowMode::RIGHT);
+    top_bar->background_color = LIGHTGRAY;
+    root_box->AddChild(top_bar);
+
+
+    std::vector<std::string> options = { "new","open","clone repository","start window","add","close","close folder","print" };
+
+    std::shared_ptr<TreeSource> file = Create<TreeSource>("file");
+    file->background_color = LIGHTGRAY;
+    file->border_size = 1;
+    top_bar->AddChild(file);
+
+
+    for (std::string& str : options) {
+        std::shared_ptr<TreeNode> node = Create<TreeNode>(str,1,Vector2{250,22});
+        node->MakeTree();
+        for (std::string& str2 : options) {
+            std::string new_str = str + "-" + str2;
+            std::shared_ptr<TreeNode> next = Create<TreeNode>(new_str,2, Vector2{ 250,22 });
+            node->AddNode(next);
+        }
+        file->AddNode(node);
+    }
+
+
+
+    std::shared_ptr<Text> edit = Create<Text>("edit");
+    edit->background_color = LIGHTGRAY;
+    edit->border_size = 1;
+    top_bar->AddChild(edit);
+
 */
