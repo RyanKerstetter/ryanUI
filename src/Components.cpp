@@ -40,7 +40,10 @@ namespace ryanUI::Components {
             y_accum += text->size.y;
         }
 
-        scroll_pane->content->size.y = std::max(y_accum, scroll_pane->min_content_size.y);
+        scroll_pane->content->FlushPending();
+        //scroll_pane->content->size.y = std::max(y_accum, scroll_pane->min_content_size.y);
+        scroll_pane->content->Fit();
+        std::cout << "New ScrollPane Y Size:" << scroll_pane->content->size.y << std::endl;
 	}
 
 	FileSelectDialog::FileSelectDialog(Vector2 size, fs::path path, std::function<void(fs::path)> cb)
@@ -65,9 +68,10 @@ namespace ryanUI::Components {
 
         submit_button->background_color = LIGHTGRAY;
         submit_button->on_click = [this](Component* self, Event::MouseEvent event) {
+            std::cout << "Submitting" << std::endl;
             if (callback)
                 callback(path_to_file);
-            ClearPopup();
+            ClearPopups();
             };
         
 	}

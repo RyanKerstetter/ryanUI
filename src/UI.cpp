@@ -411,7 +411,6 @@ void ryanUI::Box::FlushPending(){
     add_pending.clear();
 
     for (std::shared_ptr<Component> pending : remove_pending) {
-        std::cout << "Removing" << pending.get() << std::endl;
         children.erase(std::remove(children.begin(), children.end(), pending), children.end());
     }
     remove_pending.clear();
@@ -464,10 +463,10 @@ void ryanUI::Box::MatchColliding(std::vector<CollidingEntry>& colliding,Vector2 
 
 void ryanUI::Box::Fit() {
     if ((true || grow_mode == GrowMode::FREE) && children.size() != 0) {
-        float min_x = INT_MAX;
-        float min_y = INT_MAX;
-        float max_x = INT_MIN;
-        float max_y = INT_MIN;
+        float min_x = std::numeric_limits<int>::max();
+        float min_y = std::numeric_limits<int>::max();
+        float max_x = std::numeric_limits<int>::min();
+        float max_y = std::numeric_limits<int>::min();
         for (int i = 0; i < children.size(); i++) {
             std::shared_ptr<Component> child = children[i];
             Vector2 child_size = child->GetTotalSize();
@@ -487,9 +486,9 @@ void ryanUI::Box::Fit() {
             child->offset.y -= min_y;
         }
         Vector2 new_size = { max_x - min_x,max_y - min_y };
-
+        std::cout << "NewSize:" << new_size.x << "," << new_size.y << std::endl;
         if (new_size.x != size.x || new_size.y != size.y) {
-            std::cout << "NewSize:" << new_size.x << "," << new_size.y << std::endl;
+            
             SetContentSize({ max_x - min_x,max_y - min_y });
         }
     }
@@ -639,6 +638,10 @@ void ryanUI::ScrollBar::onClick(Component* self, ryanUI::Event::MouseEvent mouse
     }
     
 
+    if(bar->on_change){
+        bar->on_change(bar->current_progress);
+    }
+
     
 }
 
@@ -648,6 +651,10 @@ void ryanUI::ScrollBar::onDrag(Component* self, ryanUI::Event::DragEvent drag){
         bar->current_progress = std::clamp(bar->current_progress + (drag.frame_delta.x / (1 - bar->bar_size) / bar->size.x),0.0f,1.0f);
     else
         bar->current_progress = std::clamp(bar->current_progress + (drag.frame_delta.y / (1 - bar->bar_size) / bar->size.y),0.0f,1.0f);
+
+    if(bar->on_change){
+        bar->on_change(bar->current_progress);
+    }
 }
 
 ryanUI::ScrollBar::ScrollBar() : Component() {}
@@ -661,9 +668,15 @@ ryanUI::ScrollBar::ScrollBar(Vector2 size, bool horizontal) : Component({0,0},si
 ryanUI::ScrollBar::ScrollBar(float size,bool h) : ScrollBar(Vector2{h ? size : 20,h ? 20 : size},h) {}
 
 
-ryanUI::ScrollPane::ScrollPane(Vector2 size) : Box(Vector2{size.x + 22,size.y}), min_content_size(size){
+ryanUI::ScrollPane::ScrollPane(Vector2 size) : Box(Vector2{size.x + 22,size.y}) {
     scroll_bar = Create<ScrollBar>(size.y-2);
     scroll_bar->border_size = 1;
+    scroll_bar->on_change = [this] (float progress){
+        float content_y_size = this->content->size.y;
+        float ratio = this->size.y / content_y_size;
+        scroll_bar->bar_size = std::clamp(ratio,.15f,.8f);
+        content->offset.y = -1 * (content_y_size - this->size.y) * progress;
+    };
     content = Create<Box>(size);
     scroll_bar->offset.x = size.x;
 
@@ -688,13 +701,17 @@ void ryanUI::ScrollPane::RemoveChild(std::shared_ptr<Component> child) {
     content->RemoveChild(child);
 }
 
+ void ryanUI::ScrollPane::HandleChildSizeChange() {
+    std::cout << "scrollPane childSizeChange" << std::endl;
+
+    scroll_bar->visible = content->size.y > size.y;
+    content->size.y = std::max(content->size.y,size.y);
+ }
+
 void ryanUI::ScrollPane::Update(){
     Box::Update();
-    float bar_progress = scroll_bar->current_progress;
-    float content_y_size = content->size.y;
-    float ratio = size.y / content_y_size;
-    scroll_bar->bar_size = std::clamp(ratio,.2f,.6f);
-    content->offset.y = -1 * (content_y_size - size.y) * scroll_bar->current_progress;
+    
+
 }
 
 void ryanUI::ScrollPane::render(Vector2 offset, float opacity){
@@ -1029,7 +1046,7 @@ void ryanUI::DropdownMenu::onClick(ryanUI::Component* self, ryanUI::Event::Mouse
         text->background_color = dm->background_color;
         text->on_click = [i, dm](ryanUI::Component* self, ryanUI::Event::MouseEvent event) {
             dm->SetSelection(i);
-            ClearPopup();
+            PopPopup();
             };
         text->on_hover = [i, dm](ryanUI::Component* self, ryanUI::Event::MouseEvent event) {
             self->background_color = BLUE;
@@ -1041,7 +1058,7 @@ void ryanUI::DropdownMenu::onClick(ryanUI::Component* self, ryanUI::Event::Mouse
     }
 
     PopupEntry entry = PopupEntry{ true, true, popup };
-    SetPopup(entry);
+    AddPopup(entry);
 }
 
 ryanUI::TreeSource::TreeSource(std::string str) : Text(str) {
@@ -1064,7 +1081,7 @@ void ryanUI::TreeSource::onClick(Component* self, Event::MouseEvent event) {
     TreeNode::root->AddChild(ts->node_list);
     TreeNode::root->offset = Vector2{ 0,0 };
     PopupEntry entry = PopupEntry{ true,true,TreeNode::root };
-    SetPopup(entry);
+    AddPopup(entry);
 }
 
 ryanUI::TreeNode::TreeNode(std::string str, int depth,Vector2 size) : Box(size),depth(depth) {
@@ -1123,18 +1140,18 @@ void ryanUI::TreeNode::onClick(Component* self, Event::MouseEvent event) {
 }
 
 void ryanUI::TreeNode::rootOnClick(Component* self, Event::MouseEvent event) {
-    ClearPopup();
+    ClearPopups();
 }
 
 void ryanUI::Init(int window_height, int window_width) {
-    loaded_textures["down_arrow"] = LoadTexture("ryanUI/down-arrow.png");
-    loaded_textures["up_arrow"] = LoadTexture("ryanUI/up-arrow.png");
-    loaded_textures["right_arrow"] = LoadTexture("ryanUI/right-arrow.png");
+    loaded_textures["down_arrow"] = LoadTexture("ryan_ui/down-arrow.png");
+    loaded_textures["up_arrow"] = LoadTexture("ryan_ui/up-arrow.png");
+    loaded_textures["right_arrow"] = LoadTexture("ryan_ui/right-arrow.png");
 
     Image img = GenImageColor(1, 1, BLANK);
     loaded_textures["blank"] = LoadTextureFromImage(img);
 
-    default_font = LoadFontEx("ryanUI/IBMPlexMono-Regular.ttf",20,0,0);
+    default_font = LoadFontEx("ryan_ui/IBMPlexMono-Regular.ttf",20,0,0);
 
     root = Create<ryanUI::Box>(Vector2{ (float)window_height,(float)window_width });
 
@@ -1178,8 +1195,16 @@ void ryanUI::HandleEvents(){
     root->MatchColliding(colliding, mousePos);
 
     static std::vector<Component::CollidingEntry> popup_colliding;
-    if (popup.component)
+
+    PopupEntry popup = PopupEntry{};
+    int index = popup_entries.size() - 1;
+    for(;index >= 0; index--) {
+        popup = popup_entries[index];
         popup.component->MatchColliding(popup_colliding, Vector2{ mousePos.x - popup.component->GetGlobalOffset().x,mousePos.y - popup.component->GetGlobalOffset().y });
+        if(popup.block_inputs)
+            break;
+    }
+    
 
     for(Component::CollidingEntry c: popup_colliding){
         if ((c.comp->on_click || c.comp->on_type || c.comp->on_drag) && c.comp->IsInteractable(c.offset))
@@ -1223,7 +1248,7 @@ void ryanUI::HandleEvents(){
     if(click_event.btn != Event::MouseButton::NONE){
         text_focus = nullptr;
         bool popup_captured = false;
-        for (int i = popup_colliding.size() - 1; i >= 0; i--) {
+        for (int i = popup_colliding.size() - 1; i >= index; i--) {
             Component::CollidingEntry& c = popup_colliding[i];
             click_event.relative_pos = c.offset;
             if (c.comp->OnClick(click_event)) {
@@ -1239,6 +1264,7 @@ void ryanUI::HandleEvents(){
                 break;
         }
 
+
         if (!popup_captured && popup.component && popup.close_on_outside_click) {
             clear_popup = true;
         }
@@ -1250,7 +1276,7 @@ void ryanUI::HandleEvents(){
         release_event.btn = Event::MouseButton::LEFT;
     if(release_event.btn != Event::MouseButton::NONE){
         bool popup_captured = false;
-        for (int i = popup_colliding.size() - 1; i >= 0; i--) {
+        for (int i = popup_colliding.size() - 1; i >= index; i--) {
             Component::CollidingEntry& c = popup_colliding[i];
             release_event.relative_pos = c.offset;
             if (c.comp->OnRelease(release_event)) {
@@ -1275,7 +1301,7 @@ void ryanUI::HandleEvents(){
         hold_event.btn = Event::MouseButton::LEFT;
     if (hold_event.btn != Event::MouseButton::NONE) {
         bool popup_captured = false;
-        for (int i = popup_colliding.size() - 1; i >= 0; i--) {
+        for (int i = popup_colliding.size() - 1; i >= index; i--) {
             Component::CollidingEntry& c = popup_colliding[i];
             hold_event.relative_pos = c.offset;
             if (c.comp->OnHold(hold_event)){
@@ -1297,7 +1323,7 @@ void ryanUI::HandleEvents(){
     scroll_event.scroll_dir = scroll;
     if (scroll.x != 0 || scroll.y != 0) {
         bool popup_captured = false;
-        for (int i = popup_colliding.size() - 1; i >= 0; i--) {
+        for (int i = popup_colliding.size() - 1; i >= index; i--) {
             Component::CollidingEntry& c = popup_colliding[i];
             click_event.relative_pos = c.offset;
             if (c.comp->OnScroll(scroll_event)){
@@ -1353,36 +1379,37 @@ void ryanUI::HandleEvents(){
         }
     }
 
+
+    root->Update();
+    for(PopupEntry e: popup_entries)
+        e.component->Update();
     
     popup_colliding.clear();
     colliding.clear();
-    if (clear_popup)
-        ClearPopup();
-    if (temp_popup.component) {
-        ClearPopup();
-        popup = temp_popup;
+
+    if (clear_popup){
+        popup_entries.resize(index);
+        
     }
-    temp_popup.component = nullptr;
-    root->Update();
-    if (popup.component)
-        popup.component->Update();
 }
 
 void ryanUI::Draw() {
     if (root)
         root->Draw({ 0,0 },1);
-    if (popup.component) {
-        popup.component->Draw({0,0 }, 1);
+    for(int i = 0; i < popup_entries.size();i++){
+        PopupEntry e = popup_entries[i];
+        e.component->Draw({0,0},1);
     }
-
 }
 
-void ryanUI::SetPopup(PopupEntry entry) {
-    temp_popup = entry;
+void ryanUI::AddPopup(PopupEntry entry) {
+    popup_entries.push_back(entry);
 }
 
-void ryanUI::ClearPopup() {
-    if(popup.component)
-        popup.component->OnClose();
-    popup = PopupEntry();
+void ryanUI::ClearPopups() {
+    popup_entries.clear();
+}
+
+void ryanUI::PopPopup() {
+    popup_entries.pop_back();
 }

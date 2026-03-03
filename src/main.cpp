@@ -15,6 +15,8 @@ void set_sp(std::shared_ptr<ScrollPane> sp, fs::path p) {
     for (std::shared_ptr<Component> c : sp->content->children) {
         sp->RemoveChild(c);
     }
+    
+    sp->content->FlushPending();
 
     if (!p.parent_path().empty()) {
         std::shared_ptr<Text> up = Create<Text>("..");
@@ -24,6 +26,8 @@ void set_sp(std::shared_ptr<ScrollPane> sp, fs::path p) {
             };
         sp->AddChild(up);
     }
+    sp->content->FlushPending();
+
     float y_accum = 0;
     for (const auto entry : fs::directory_iterator(p)) {
         std::string file_name = entry.path().filename().string();
@@ -37,8 +41,7 @@ void set_sp(std::shared_ptr<ScrollPane> sp, fs::path p) {
         sp->AddChild(text);
         y_accum += text->size.y;
     }
-
-    sp->content->size.y = std::max(y_accum, sp->min_content_size.y);
+    sp->Fit();
 };
 
 int main(void)
@@ -58,21 +61,11 @@ int main(void)
 
 
     std::vector<std::string> options = { "new","open","clone repository","start window","add","close","close folder","print" };
-    
-    /*
-    std::shared_ptr<ScrollPane> sp = Create<ScrollPane>(Vector2{ 700,200 });
-    sp->offset = { 50,150 };
-    sp->content->fit_non_axis = false;
-
-    sp->SetGrowMode(Box::GrowMode::DOWN);
-    sp->background_color = LIGHTGRAY;
-    
-    set_sp(sp, path);
-    */
 
     std::shared_ptr<FileSelectDialog> fsd = Create<FileSelectDialog>(Vector2{ 600,400 }, path,nullptr);
+    fsd->offset = {75,75};
 
-    root_box->AddChild(fsd);
+    PopupEntry pe = PopupEntry{true,false,fsd};
     
     
     while (!WindowShouldClose())

@@ -5,6 +5,7 @@
 #include <string>
 #include <functional>
 #include <unordered_map>
+#include <stack>
 
 namespace ryanUI{
 
@@ -446,6 +447,8 @@ namespace ryanUI{
         float bar_size = .2; // This is the portion of the size taken up so .5 would be half bar half space
         bool horizontal = false;
 
+        std::function<void(float)> on_change = nullptr;
+
         Color bar_color = BLACK;
 
         void render(Vector2 offset, float opacity) override;
@@ -460,7 +463,6 @@ namespace ryanUI{
 
     class ScrollPane : public Box {
     public:
-        Vector2 min_content_size = { 0,0 };
         std::shared_ptr<Box> content = nullptr;
         std::shared_ptr<ScrollBar> scroll_bar = nullptr;
 
@@ -471,7 +473,7 @@ namespace ryanUI{
         void Update() override;
         void Init() override;
 
-        void HandleChildSizeChange() override {};
+        void HandleChildSizeChange() override;
 
         static void onScroll(Component* self, Event::ScrollEvent event);
 
@@ -565,8 +567,8 @@ namespace ryanUI{
         std::shared_ptr<UIImage> up_arrow = nullptr;
        
 
-        void SetDefaultComponent(std::shared_ptr<Component> default);
-        void SetExpandedComponent(std::shared_ptr<Component> default);
+        void SetDefaultComponent(std::shared_ptr<Component> component);
+        void SetExpandedComponent(std::shared_ptr<Component> componnet);
 
         void Expand();
         void Contract();
@@ -639,7 +641,6 @@ namespace ryanUI{
         std::shared_ptr<Component> component = nullptr;
     };
 
-
     template <typename T, typename... Args>
     static std::shared_ptr<T> Create(Args&&... args) {
 
@@ -654,9 +655,10 @@ namespace ryanUI{
     void HandleEvents();
     void Draw();
     
-    void SetPopup(PopupEntry entry);
-    void ClearPopup();
-
+    void AddPopup(PopupEntry entry);
+    void ClearPopups();
+    void PopPopup();
+    
     inline static Font default_font = GetFontDefault();
     
 
@@ -671,9 +673,10 @@ namespace ryanUI{
 
     inline static std::unordered_map<std::string, Texture2D> loaded_textures;
 
-    
-    inline static PopupEntry temp_popup; // We need a temp because adding a popup while handling events results in errors
-    inline static PopupEntry popup;
+    // We want them sorted so we can draw some events on top of others
+    inline static std::vector<PopupEntry> popup_entries;
 
-    
+    bool tooltip_follow_mouse = true;
+    inline static std::shared_ptr<Component> tooltip = nullptr;
+
 };
